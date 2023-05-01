@@ -49,9 +49,9 @@ class SAMD21Controller:
         self._ser.write("!".encode('ascii'))
         time.sleep(0.1)
         i = ''
-        while i is not '!':
+        while i != '!':
             i = input('CMD (! to exit)> ')
-            if i is not '!':
+            if i != '!':
                 self._ser.write((i + '\r').encode('ascii'))
                 buf = ''
                 time.sleep(0.1)
@@ -66,6 +66,15 @@ class SAMD21Controller:
         time.sleep(0.1)
         self._ser.write((cmd + "\r").encode('ascii'))
         time.sleep(0.25)
+        self._ser.write("!".encode('ascii'))  
+
+    def send_command_and_confirm(self, cmd):
+        self._ser.write("!".encode('ascii'))
+        time.sleep(0.1)
+        self._ser.write((cmd + "\r").encode('ascii'))
+        time.sleep(0.1)
+        self._ser.write(("y").encode('ascii'))
+        time.sleep(0.1)
         self._ser.write("!".encode('ascii'))  
 
     def read(self, stop): 
