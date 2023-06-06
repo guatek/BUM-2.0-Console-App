@@ -1,14 +1,21 @@
 import KYFGLib
 import cv2
 import numpy as np
+import time
 from KYFGLib import *
 import queue
+from loguru import logger
+from datetime import datetime
+
+from probe_control import ProbeController
+from video_recorder import VideoRecorder
 
 WINDOW_NAME = 'BUM2.0'
 FPS_SMOOTHING = 0.9
 WINDOW_NAME = 'BUM2.0'
 cv2.namedWindow(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN)
 cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
 
 
 new_frame = False
@@ -69,8 +76,8 @@ def Stream_callback_func(buffHandle, userContext):
         buffHandle, KY_STREAM_BUFFER_INFO_CMD.KY_STREAM_BUFFER_INFO_INSTANTFPS) # FLOAT64
     (KYFG_BufferGetInfo_status, pInfoID, pInfoSize, pInfoType) = KYFG_BufferGetInfo(
         buffHandle, KY_STREAM_BUFFER_INFO_CMD.KY_STREAM_BUFFER_INFO_ID) # UINT32
-    print("Buffer Info: Base " + str(pInfoBase) + ", Size " + str(pInfoSize) + ", Timestamp "+ str(pInfoTimestamp) + ", FPS " + str(pInfoFPS)
-          + ", ID " + str(pInfoID), end='\r')
+    #print("Buffer Info: Base " + str(pInfoBase) + ", Size " + str(pInfoSize) + ", Timestamp "+ str(pInfoTimestamp) + ", FPS " + str(pInfoFPS)
+    #      + ", ID " + str(pInfoID), end='\r')
 
     #(KYFG_BufferGetInfo_status, frameIndex) = KYFG_StreamGetFrameIndex(buffHandle)
     #frameData = KYFG_StreamGetPtr(buffHandle, frameIndex)
@@ -81,7 +88,7 @@ def Stream_callback_func(buffHandle, userContext):
         frame_data = make_nd_array(cast(pInfoBase,c_void_p), (4600, 5312), dtype=np.uint8)
         new_frame = True
     except Exception as e:
-        print('In Frame Handler: ' + str(e))
+        logger.warning('Frame Handler Exception: ' + str(e))
         pass
     #frame_data = frame_data.astype(np.uint8)
 
@@ -160,62 +167,66 @@ def startCamera (grabberIndex, cameraIndex):
 
 
 try:
-    print("Welcome To KYFGLib Queued Buffers API Python Sample Script\n")
+    logger.remove()
+    logger.add(sys.stderr, level='INFO')
+    now = datetime.utcnow() # current date and time
+    timestring = now.strftime("%Y%m%dT%H%M%S%f")
+    logger.add(os.path.join('logs', timestring + '.log'), rotation="1 MB", retention="24 days")
 
     initParams = KYFGLib_InitParameters()
     KYFGLib_Initialize(initParams)
 
     (KY_GetSoftwareVersion_status, soft_ver) = KY_GetSoftwareVersion()
-    print("KYFGLib version: " + str(soft_ver.Major) + "." + str(soft_ver.Minor) + "." + str(soft_ver.SubMinor))
+    logger.info("KYFGLib version: " + str(soft_ver.Major) + "." + str(soft_ver.Minor) + "." + str(soft_ver.SubMinor))
     if (soft_ver.Beta > 0):
-        print("(Beta " + str(soft_ver.Beta) + ")")
+        logger.info("(Beta " + str(soft_ver.Beta) + ")")
     if (soft_ver.RC > 0):
-        print("(RC " + str(soft_ver.RC) + ")")
+        logger.info("(RC " + str(soft_ver.RC) + ")")
 
     # Scan devices
     (status, fgAmount) = KYFGLib.KY_DeviceScan()
     if (status != FGSTATUS_OK):
-        print("KY_DeviceScan() status: " + str(format(status, '02x')))
+        logger.info("KY_DeviceScan() status: " + str(format(status, '02x')))
 
     # Print available devices params
     for x in range(fgAmount):
         (status, dev_info) = KYFGLib.KY_DeviceInfo(x)
         if (status != FGSTATUS_OK):
-            print("Cant retrieve device #" + str(x) + " info")
+            logger.info("Cant retrieve device #" + str(x) + " info")
             continue
-        print("Device " + str(x) + ": " + dev_info.szDeviceDisplayName)
+        logger.info("Device " + str(x) + ": " + dev_info.szDeviceDisplayName)
     
     grabber_index = 0
     camera_index = 0
 
     # Get Grabber info
     grabberIndex = int(grabber_index)
-    print("Selected grabber: " + str(grabber_index))
-    print("\nGetting info about the grabber: ")
+    logger.info("Selected grabber: " + str(grabber_index))
+    logger.info("\nGetting info about the grabber: ")
     (status, dev_info) = KY_DeviceInfo(grabberIndex)
-    print("DeviceDisplayName: " + dev_info.szDeviceDisplayName)
-    print("Bus: " + str(dev_info.nBus))
-    print("Slot: " + str(dev_info.nSlot))
-    print("Function: " + str(dev_info.nFunction))
-    print("DevicePID: " + str(dev_info.DevicePID))
-    print("isVirtual: " + str(dev_info.isVirtual))
+    logger.info("DeviceDisplayName: " + dev_info.szDeviceDisplayName)
+    logger.info("Bus: " + str(dev_info.nBus))
+    logger.info("Slot: " + str(dev_info.nSlot))
+    logger.info("Function: " + str(dev_info.nFunction))
+    logger.info("DevicePID: " + str(dev_info.DevicePID))
+    logger.info("isVirtual: " + str(dev_info.isVirtual))
 
     # connect to grabber
     connection = connectToGrabber(grabberIndex)
 
     # scan for connected cameras
     (CameraScan_status, camHandleArray[grabberIndex]) = KYFG_UpdateCameraList(handle[grabberIndex])
-    print("Found " + str(len(camHandleArray[grabberIndex])) + " cameras")
+    logger.info("Found " + str(len(camHandleArray[grabberIndex])) + " cameras")
     if(len(camHandleArray[grabberIndex]) == 0):
-        print("Could not connect to a camera")
+        logger.info("Could not connect to a camera")
 
     # open a connection to chosen camera
     (KYFG_CameraOpen2_status,) = KYFG_CameraOpen2(camHandleArray[grabberIndex][0], None)
-    # print("KYFG_CameraOpen2_status: " + str(format(KYFG_CameraOpen2_status, '02x')))
+    # logger.info("KYFG_CameraOpen2_status: " + str(format(KYFG_CameraOpen2_status, '02x')))
     if (KYFG_CameraOpen2_status == FGSTATUS_OK):
-        print("Camera 0 was connected successfully")
+        logger.info("Camera 0 was connected successfully")
     else:
-        print("Something went wrong while opening camera")
+        logger.info("Something went wrong while opening camera")
 
     (SetCameraValueFloat_status_height,) = KYFG_SetCameraValueFloat(camHandleArray[grabberIndex][0], "AcquisitionFrameRate", 30.0)
 
@@ -262,28 +273,115 @@ try:
     startCamera(grabberIndex, 0)
 
     cv2.imshow(WINDOW_NAME, frame_data)
+    cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
+    cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+    pc = ProbeController(port='/dev/ttyUSB0')
 
     fps = 0.0
     prev = time.time()
     c = 'x'
+    mode = 0
+    white_flash_dur = 5
+    uv_flash_dur = 500
+    trigger_width = 4*uv_flash_dur
+    recording = False
+    threaded_rec = None
+    pc.send_command_and_confirm("cameraon")
+    pc.send_command("cfg,whiteflash," + str(white_flash_dur))
+    pc.send_command("cfg,uvflash," + str(uv_flash_dur))
+    pc.send_command("cfg,trigwidth," + str(trigger_width))
+    pc.send_command("movelens,0.0")
+    focus_pos = 0.0
     while (c != 'e'):
-
-        #c = input("")
 
         now = time.time()
         fps = (fps*FPS_SMOOTHING + (1/(now - prev))*(1.0 - FPS_SMOOTHING))
         prev = now
 
-        #print("fps: {:.1f}".format(fps))
-
         try:
             if new_frame:
                 frame_data = cv2.cvtColor(frame_data,cv2.COLOR_BAYER_RG2RGB)
-                frame_data = frame_data[1220:(1220+2160),732:(732+3840)]
+                frame_data = frame_data[1220:(1220+2160),732:(732+3840),:]
+                output_text = "Status: "
+                if recording:
+                    output_text = output_text + "RECORDING"
+                output_text = output_text + ", " + "Mode = "
+                if mode == 0:
+                    output_text = output_text + 'WHITE FLASH'
+                else:
+                    output_text = output_text + 'UV FLASH'
+                output_text = output_text + ", " + "Focus = " + str(focus_pos) + ", Flash Duration = "
+                if mode == 0:
+                    output_text = output_text + str(white_flash_dur)
+                else:
+                    output_text = output_text + str(uv_flash_dur)
+                cv2.putText(
+                    img = frame_data,
+                    text = output_text,
+                    org = (50, 2130),
+                    fontFace = cv2.FONT_HERSHEY_DUPLEX,
+                    fontScale = 2,
+                    color = (200, 246, 55),
+                    thickness = 2
+                )
                 cv2.imshow(WINDOW_NAME, frame_data)
-                cv2.waitKey(2)
                 new_frame = False
-            if (cv2.waitKey(2) == 27):
+                if recording and threaded_rec is not None:
+                    threaded_rec.add_frame(frame_data.copy())
+            
+            ui_event = cv2.waitKey(16)
+
+            if ui_event == 119:
+                print('RIGHT')
+                if focus_pos + 0.04 < 3.0:
+                    pc.send_command('steplens,0.04')
+                    focus_pos += 0.04
+            if ui_event == 115:
+                print('LEFT')
+                if focus_pos - 0.04 > -2.0:
+                    pc.send_command('steplens,-0.04')
+                    focus_pos -= 0.04
+            if ui_event == 105:
+                print('MODE')
+                if mode == 0:
+                    pc.send_command('cfg,imagingmode,1')
+                    mode = 1
+                elif mode == 1:
+                    pc.send_command('cfg,imagingmode,0')
+                    mode = 0
+            if ui_event == 100:
+                if mode == 0:
+                    white_flash_dur = white_flash_dur * 2
+                    if white_flash_dur > 100:
+                        white_flash_dur = 100
+                    pc.send_command("cfg,whiteflash," + str(white_flash_dur))
+                elif mode == 1:
+                    uv_flash_dur = uv_flash_dur * 2
+                    if uv_flash_dur > 5000:
+                        uv_flash_dur = 5000
+                    pc.send_command("cfg,uvflash," + str(uv_flash_dur))
+            if ui_event == 97:
+                if mode == 0:
+                    white_flash_dur = white_flash_dur / 2
+                    pc.send_command("cfg,whiteflash," + str(white_flash_dur))
+                elif mode == 1:
+                    uv_flash_dur = uv_flash_dur / 2
+                    pc.send_command("cfg,uvflash," + str(uv_flash_dur))
+
+            if ui_event == 114:
+                if not recording:
+                    print('RECORD')
+                    threaded_rec = VideoRecorder()
+                    threaded_rec.add_frame(frame_data.copy())
+                    recording = True
+                else:
+                    print('STOP')
+                    threaded_rec.end_recording()
+                    threaded_rec = None
+                    recording = False
+
+            if ui_event == 27:
                 break
 
         except Exception as e:
@@ -303,7 +401,7 @@ try:
 
 
 except KYException as KYe:
-    print("KYException occurred: ")
+    logger.warning("KYException occurred: " + str(KYe))
     raise
 
 
