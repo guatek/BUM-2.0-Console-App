@@ -63,18 +63,18 @@ class SAMD21Controller:
 
     def send_command(self, cmd):
         self._ser.write("!".encode('ascii'))
-        time.sleep(0.1)
+        time.sleep(0.25)
         self._ser.write((cmd + "\r").encode('ascii'))
         time.sleep(0.25)
         self._ser.write("!".encode('ascii'))  
 
     def send_command_and_confirm(self, cmd):
         self._ser.write("!".encode('ascii'))
-        time.sleep(0.1)
+        time.sleep(0.25)
         self._ser.write((cmd + "\r").encode('ascii'))
-        time.sleep(0.1)
+        time.sleep(0.25)
         self._ser.write(("y").encode('ascii'))
-        time.sleep(0.1)
+        time.sleep(0.25)
         self._ser.write("!".encode('ascii'))  
 
     def read(self, stop): 
