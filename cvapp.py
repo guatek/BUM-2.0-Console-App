@@ -1,5 +1,6 @@
 import KYFGLib
 import cv2
+import os
 import numpy as np
 import time
 from KYFGLib import *
@@ -21,7 +22,12 @@ cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
 
 new_frame = False
 frame_data = np.zeros((4600,5312),dtype=np.uint8)
+full_frame_data = np.zeros((4600,5312,3),dtype=np.uint8)
 tmp_img = None
+
+# Global video and photo counter
+video_counter = 0
+photo_counter = 0
 
 stop_app = False
 def handler_stop_signals(signum, frame):
@@ -305,6 +311,9 @@ try:
     pc.send_command("movelens,0.0")
     focus_pos = 0.0
 
+    # filter events to eliminate false button presses
+    button_event_filter = []
+
     last_command_time = time.time()
 
     while (not stop_app):
@@ -316,10 +325,11 @@ try:
         try:
             if new_frame:
                 frame_data = cv2.cvtColor(frame_data,cv2.COLOR_BAYER_RG2RGB)
+                full_frame_data = frame_data
                 frame_data = frame_data[1220:(1220+2160),732:(732+3840),:]
                 output_text = "Status: "
                 if recording:
-                    output_text = output_text + "RECORDING"
+                    output_text = output_text + "REC"
                 output_text = output_text + ", " + "Mode = "
                 if mode == 0:
                     output_text = output_text + 'WHITE FLASH'
@@ -330,13 +340,14 @@ try:
                     output_text = output_text + '{:.3f}'.format(white_flash_dur)
                 else:
                     output_text = output_text + '{:.3f}'.format(uv_flash_dur)
+                output_text = output_text + ", VID " + str(video_counter) + ", IMG " + str(photo_counter)
                 cv2.putText(
                     img = frame_data,
                     text = output_text,
                     org = (50, 2130),
                     fontFace = cv2.FONT_HERSHEY_DUPLEX,
                     fontScale = 2,
-                    color = (200, 246, 55),
+                    color = (200, 246, 200),
                     thickness = 2
                 )
                 cv2.imshow(WINDOW_NAME, frame_data)
@@ -348,23 +359,58 @@ try:
 
             # Check for event and minimum event time
             if ui_event > 0:
+                button_event_filter.append(ui_event)
+                continue
+
+                """
+                # If this is the first event in a batch, wait for possiblee other events
+                if len(button_event_filter) == 1:
+                    last_command_time = time.time()
+                    continue
+
                 elapsed_time = time.time() - last_command_time
                 # Don't process any commands if the time between them is too short
                 if elapsed_time < min_time_between_events:
                     continue
-
+                else:
+                    last_command_time = time.time()
+                """
+            # Filter out multi button events. The assumption here is that any set of events is
+            # a button read error and only events with a single 
+            if time.time() - last_command_time >= 0.65:
+                # Only pass events if there was one during the last time period
                 last_command_time = time.time()
+                if len(button_event_filter) == 1:
+                    ui_event = button_event_filter[0]
+                    button_event_filter = []
+                else:
+                    button_event_filter = []
+                    continue
+                
 
+
+            # TAKE PHOTO
+            if ui_event == 101:
+                print("PHOTO")
+                timestr = time.strftime("%Y%m%d-%H%M%S")
+                cv2.imwrite(os.path.join('/NVMEDATA', timestr + '.tif'), full_frame_data)
+                photo_counter += 1
+
+            # MOVE LENS BACKWARD
             if ui_event == 119:
                 print('RIGHT')
                 if focus_pos + 0.04 < 3.0:
                     pc.send_command('steplens,0.04')
                     focus_pos += 0.04
+            
+            # MOVE LENS FORWARD
             if ui_event == 115:
                 print('LEFT')
                 if focus_pos - 0.04 > -2.0:
                     pc.send_command('steplens,-0.04')
                     focus_pos -= 0.04
+
+            # TOGGLE FLASH MODE
             if ui_event == 105:
                 print('MODE')
                 if mode == 0:
@@ -373,6 +419,8 @@ try:
                 elif mode == 1:
                     pc.send_command('cfg,imagingmode,0')
                     mode = 0
+            
+            # INCREASE FLASH DURATION
             if ui_event == 100:
                 if mode == 0:
                     white_flash_dur = white_flash_dur * 2
@@ -386,6 +434,8 @@ try:
                     if uv_flash_dur > 5000:
                         uv_flash_dur = 5000
                     pc.send_command("cfg,uvflash," + str(uv_flash_dur))
+            
+            # DECREASE FLASH DURATION
             if ui_event == 97:
                 if mode == 0:
                     white_flash_dur = white_flash_dur / 2
@@ -394,6 +444,7 @@ try:
                     uv_flash_dur = uv_flash_dur / 2
                     pc.send_command("cfg,uvflash," + str(uv_flash_dur))
 
+            # RECORD
             if ui_event == 114:
                 if not recording:
                     print('RECORD')
@@ -405,6 +456,7 @@ try:
                     threaded_rec.end_recording()
                     threaded_rec = None
                     recording = False
+                    video_counter += 1
 
             if ui_event == 27:
                 break
