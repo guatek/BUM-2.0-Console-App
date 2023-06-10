@@ -362,6 +362,7 @@ try:
             batt_voltage = d[5]
             sys_temp = d[2]
             sys_hum = d[4]
+            batt_charge = d[15]
             cc_update_timer = time.time()
             sensors_valid = True
 
@@ -389,7 +390,7 @@ try:
 
                 # Sensor text for app
                 if sensors_valid:
-                    sensor_text = "CT: " + '{:.2f}'.format(sys_temp) + " C, CH: " + '{:.2f}'.format(sys_hum) + " %"
+                    sensor_text = "Temp: " + '{:.2f}'.format(sys_temp) + " C, Humidity: " + '{:.2f}'.format(sys_hum) + " %, Battery: " +  '{:.2f}'.format(batt_charge) + " %"
                 else:
                     sensor_text = ""
 
@@ -481,14 +482,14 @@ try:
             if ui_event == 119:
                 print('RIGHT')
                 if focus_pos + 0.04 < 3.0:
-                    pc.send_command('steplens,0.04')
+                    pc.set_cmd('steplens','0.04')
                     focus_pos += 0.04
             
             # MOVE LENS FORWARD
             if ui_event == 115:
                 print('LEFT')
                 if focus_pos - 0.04 > -2.0:
-                    pc.send_command('steplens,-0.04')
+                    pc.set_cmd('steplens','-0.04')
                     focus_pos -= 0.04
 
             # TOGGLE FLASH MODE

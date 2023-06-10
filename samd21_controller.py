@@ -92,7 +92,7 @@ class SAMD21Controller:
             # buffer.
             # NB: for PySerial v3.0 or later, use property `in_waiting` instead of
             # function `inWaiting()` below!
-            if not self.pause_thread and (self._ser.inWaiting() > 0):
+            if not self.pause_thread and (self._ser.in_waiting > 0):
                 # read the bytes and convert from binary array to ASCII
                 self._read_buffer += self._ser.read(self._ser.inWaiting()).decode('ascii') 
                 
@@ -108,6 +108,7 @@ class SAMD21Controller:
 
 
     def run(self):
+        logger.debug('starting serial read thread...')
         self.t1 = threading.Thread(target=self.read, args=[lambda: self.stop_thread])
         self.t1.daemon = True
         self.t1.start()
