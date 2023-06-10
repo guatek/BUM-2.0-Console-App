@@ -13,6 +13,55 @@ class ConsoleController(SAMD21Controller):
 
     def __init__(self, port='/dev/ttyACM0', baud=115200):
         super().__init__(port, baud)
+        # $BUMCTRL,2022-06-09 14:32:40.344,29.370,102.690,17.92,16.01,40.48,16.01,0.92,12.09,19.51,11.96,13.54,12.08,5.95
+        self.data_fields = ['name',
+                            'timestamp',
+                            'temperature',
+                            'pressure',
+                            'humidity',
+                            'voltage_sys',
+                            'power_sys',
+                            'voltage_probe',
+                            'power_probe',
+                            'voltage_orin',
+                            'power_orin',
+                            'voltage_disp',
+                            'power_disp',
+                            'voltage_cam',
+                            'power_cam']
+        self.data_list = ['name','timestamp',0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+
+
+    def parse_data(self):
+        self.latest_data = self._read_buffer.split('\r')[0].rstrip('\n')
+        #logger.debug(self.latest_data)
+        self._read_buffer = "".join(self._read_buffer.split('\r')[1:]).lstrip('\n')
+        try:
+            tokens = self.latest_data.split(',')
+            if len(tokens) != len(self.data_fields):
+                logger.warning("Error parsing data string: " + self.latest_data)
+            else:
+                self.data_list[0] = tokens[0]
+                self.data_list[1] = tokens[1]
+                for i in [2,3,4,5,6,7,8,9,10,11,12,13,14]:
+                    self.data_list[i] = float(tokens[i])
+        except Exception as e:
+            print(e)
+        self.new_data = False
+
+    def get_latest_data(self):
+        return self.data_list
+    
+
+if __name__=='__main__':
+    pc = ConsoleController(port='/dev/ttyUSB1')
+    pc.run()
+    while True:
+        c = input()
+        if c == 'd':
+            print(pc.get_latest_data())
+        if c =='e':
+            break
 
 
 

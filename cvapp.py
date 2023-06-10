@@ -10,6 +10,7 @@ from loguru import logger
 from datetime import datetime
 
 from probe_control import ProbeController
+from console_control import ConsoleController
 from video_recorder import VideoRecorder
 
 WINDOW_NAME = 'BUM2.0'
@@ -22,7 +23,7 @@ cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
 
 new_frame = False
 frame_data = np.zeros((4600,5312),dtype=np.uint8)
-full_frame_data = np.zeros((4600,5312,3),dtype=np.uint8)
+full_frame_data = np.zeros((4600,5312),dtype=np.uint8)
 tmp_img = None
 
 # Global video and photo counter
@@ -100,7 +101,7 @@ def Stream_callback_func(buffHandle, userContext):
 
     # convert to numpy array
     try:
-        global frame_data, new_frame
+        global frame_data, full_frame_data, new_frame
         frame_data = make_nd_array(cast(pInfoBase,c_void_p), (4600, 5312), dtype=np.uint8)
         new_frame = True
     except Exception as e:
@@ -254,9 +255,35 @@ try:
     #(SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "PixelFormat", "Mono8")
     # print("SetCameraValueEnum_ByValueName_status: " + str(format(SetCameraValueEnum_ByValueName_status, '02x')))
 
+    # Set camera to CXP6
+    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "CxpConnectionConfiguration", "CXP6_X1")
+    
+    # Setup external trigger
+    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "TriggerSelector", "AcquisitionStart")
+    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "TriggerMode", "On")
+    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "TriggerSource", "Line1")
+
+    # Setup white balance
+    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "BalanceWhiteAuto", "Off")
+    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "BalanceRatioSelector", "Red")
+    (SetCameraValueFloat_status_height,) = KYFG_SetCameraValueFloat(camHandleArray[grabberIndex][0], "BalanceRatio", 1.625)
+    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "BalanceRatioSelector", "Blue")
+    (SetCameraValueFloat_status_height,) = KYFG_SetCameraValueFloat(camHandleArray[grabberIndex][0], "BalanceRatio", 3.996)
+    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "BalanceRatioSelector", "Green")
+    (SetCameraValueFloat_status_height,) = KYFG_SetCameraValueFloat(camHandleArray[grabberIndex][0], "BalanceRatio", 1.000)
+
+    # Setup gain
+    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "GainAuto", "Continuous")
+    (SetCameraValueFloat_status_height,) = KYFG_SetCameraValueFloat(camHandleArray[grabberIndex][0], "GainAutoMin", 0.000)
+    (SetCameraValueFloat_status_height,) = KYFG_SetCameraValueFloat(camHandleArray[grabberIndex][0], "GainAutoMax", 24.00)
+
     # Example of getting camera values
     (KYFG_GetValue_status, width) = KYFG_GetCameraValueInt(camHandleArray[grabberIndex][0], "Width")
     (KYFG_GetValue_status, height) = KYFG_GetCameraValueInt(camHandleArray[grabberIndex][0], "Height")
+    
+
+
+
 
     streamInfoStruct.width = width
     streamInfoStruct.height = height
@@ -293,6 +320,7 @@ try:
     cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
     pc = ProbeController(port='/dev/ttyUSB0')
+    cc = ConsoleController(port='/dev/ttyUSB1')
 
     fps = 0.0
     prev = time.time()
@@ -310,11 +338,17 @@ try:
     pc.send_command("cfg,trigwidth," + str(trigger_width))
     pc.send_command("movelens,0.0")
     focus_pos = 0.0
+    sensors_valid = False
 
     # filter events to eliminate false button presses
     button_event_filter = []
 
     last_command_time = time.time()
+
+    cc_update_timer = time.time()
+
+    # start the background thread reading console controller data
+    cc.run()
 
     while (not stop_app):
 
@@ -322,11 +356,22 @@ try:
         fps = (fps*FPS_SMOOTHING + (1/(now - prev))*(1.0 - FPS_SMOOTHING))
         prev = now
 
+        if time.time() - cc_update_timer > 1.0:
+            d = cc.get_latest_data()
+            logger.info(d)
+            batt_voltage = d[5]
+            sys_temp = d[2]
+            sys_hum = d[4]
+            cc_update_timer = time.time()
+            sensors_valid = True
+
         try:
             if new_frame:
                 frame_data = cv2.cvtColor(frame_data,cv2.COLOR_BAYER_RG2RGB)
                 full_frame_data = frame_data
-                frame_data = frame_data[1220:(1220+2160),732:(732+3840),:]
+                frame_data_crop = frame_data[1220:(1220+2160),732:(732+3840),:].copy()
+                
+                # Status Text for app
                 output_text = "Status: "
                 if recording:
                     output_text = output_text + "REC"
@@ -341,8 +386,34 @@ try:
                 else:
                     output_text = output_text + '{:.3f}'.format(uv_flash_dur)
                 output_text = output_text + ", VID " + str(video_counter) + ", IMG " + str(photo_counter)
+
+                # Sensor text for app
+                if sensors_valid:
+                    sensor_text = "CT: " + '{:.2f}'.format(sys_temp) + " C, CH: " + '{:.2f}'.format(sys_hum) + " %"
+                else:
+                    sensor_text = ""
+
                 cv2.putText(
-                    img = frame_data,
+                    img = frame_data_crop,
+                    text = sensor_text,
+                    org = (50, 60),
+                    fontFace = cv2.FONT_HERSHEY_DUPLEX,
+                    fontScale = 2,
+                    color = (246, 200, 200),
+                    thickness = 2
+                )
+                cv2.putText(
+                    img = full_frame_data,
+                    text = sensor_text,
+                    org = (50, 60),
+                    fontFace = cv2.FONT_HERSHEY_DUPLEX,
+                    fontScale = 2,
+                    color = (246, 200, 200),
+                    thickness = 2
+                )
+
+                cv2.putText(
+                    img = frame_data_crop,
                     text = output_text,
                     org = (50, 2130),
                     fontFace = cv2.FONT_HERSHEY_DUPLEX,
@@ -350,10 +421,20 @@ try:
                     color = (200, 246, 200),
                     thickness = 2
                 )
-                cv2.imshow(WINDOW_NAME, frame_data)
+                cv2.putText(
+                    img = full_frame_data,
+                    text = output_text,
+                    org = (50, 4570),
+                    fontFace = cv2.FONT_HERSHEY_DUPLEX,
+                    fontScale = 2,
+                    color = (200, 246, 200),
+                    thickness = 2
+                )
+
+                cv2.imshow(WINDOW_NAME, frame_data_crop)
                 new_frame = False
                 if recording and threaded_rec is not None:
-                    threaded_rec.add_frame(frame_data.copy())
+                    threaded_rec.add_frame(frame_data_crop.copy())
             
             ui_event = cv2.waitKey(16)
 
@@ -377,7 +458,7 @@ try:
                 """
             # Filter out multi button events. The assumption here is that any set of events is
             # a button read error and only events with a single 
-            if time.time() - last_command_time >= 0.65:
+            if time.time() - last_command_time >= 0.15:
                 # Only pass events if there was one during the last time period
                 last_command_time = time.time()
                 if len(button_event_filter) == 1:
@@ -414,10 +495,12 @@ try:
             if ui_event == 105:
                 print('MODE')
                 if mode == 0:
-                    pc.send_command('cfg,imagingmode,1')
+                    #pc.send_command('cfg,imagingmode,1')
+                    pc.set_cfg_value('imagingmode', '1')
                     mode = 1
                 elif mode == 1:
-                    pc.send_command('cfg,imagingmode,0')
+                    #pc.send_command('cfg,imagingmode,0')
+                    pc.set_cfg_value('imagingmode', '0')
                     mode = 0
             
             # INCREASE FLASH DURATION
@@ -427,22 +510,26 @@ try:
                     # Max white flash duration in us
                     if white_flash_dur > 1000:
                         white_flash_dur = 1000
-                    pc.send_command("cfg,whiteflash," + str(white_flash_dur))
+                    #pc.send_command("cfg,whiteflash," + str(white_flash_dur))
+                    pc.set_cfg_value('whiteflash', str(white_flash_dur))
                 elif mode == 1:
                     uv_flash_dur = uv_flash_dur * 2
                     # Max UV flash duration in us
                     if uv_flash_dur > 5000:
                         uv_flash_dur = 5000
-                    pc.send_command("cfg,uvflash," + str(uv_flash_dur))
+                    #pc.send_command("cfg,uvflash," + str(uv_flash_dur))
+                    pc.set_cfg_value('uvflash', str(uv_flash_dur))
             
             # DECREASE FLASH DURATION
             if ui_event == 97:
                 if mode == 0:
                     white_flash_dur = white_flash_dur / 2
-                    pc.send_command("cfg,whiteflash," + str(white_flash_dur))
+                    #pc.send_command("cfg,whiteflash," + str(white_flash_dur))
+                    pc.set_cfg_value('whiteflash', str(white_flash_dur))
                 elif mode == 1:
                     uv_flash_dur = uv_flash_dur / 2
-                    pc.send_command("cfg,uvflash," + str(uv_flash_dur))
+                    #pc.send_command("cfg,uvflash," + str(uv_flash_dur))
+                    pc.set_cfg_value('uvflash', str(uv_flash_dur))
 
             # RECORD
             if ui_event == 114:

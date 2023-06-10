@@ -61,6 +61,15 @@ class SAMD21Controller:
         self._ser.write("!".encode('ascii'))
         self.pause_thread = False
 
+    def set_cfg_value(self, cfg_name, cfg_value):
+        cmd = '#SET,' + cfg_name + ',' + cfg_value
+        self._ser.write((cmd + "\r").encode('ascii'))
+
+    def set_cmd(self, cmd_name, cmd_value):
+        cmd = '#' + cmd_name + ',' + cmd_value
+        self._ser.write((cmd + "\r").encode('ascii'))
+
+
     def send_command(self, cmd):
         self._ser.write("!".encode('ascii'))
         time.sleep(0.25)
