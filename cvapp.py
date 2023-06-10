@@ -13,6 +13,9 @@ from probe_control import ProbeController
 from console_control import ConsoleController
 from video_recorder import VideoRecorder
 
+# overlay tools
+from overlay import draw_scale_bar
+
 WINDOW_NAME = 'BUM2.0'
 FPS_SMOOTHING = 0.9
 WINDOW_NAME = 'BUM2.0'
@@ -358,7 +361,7 @@ try:
 
         if time.time() - cc_update_timer > 1.0:
             d = cc.get_latest_data()
-            logger.info(d)
+            logger.debug(d)
             batt_voltage = d[5]
             sys_temp = d[2]
             sys_hum = d[4]
@@ -393,6 +396,8 @@ try:
                     sensor_text = "Temp: " + '{:.2f}'.format(sys_temp) + " C, Humidity: " + '{:.2f}'.format(sys_hum) + " %, Battery: " +  '{:.2f}'.format(batt_charge) + " %"
                 else:
                     sensor_text = ""
+
+                draw_scale_bar(frame_data_crop, focus_pos)
 
                 cv2.putText(
                     img = frame_data_crop,
