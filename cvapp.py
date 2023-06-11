@@ -398,6 +398,7 @@ try:
                     sensor_text = ""
 
                 draw_scale_bar(frame_data_crop, focus_pos)
+                draw_scale_bar(frame_data, focus_pos)
 
                 cv2.putText(
                     img = frame_data_crop,
