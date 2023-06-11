@@ -421,7 +421,7 @@ try:
                 cv2.putText(
                     img = frame_data_crop,
                     text = output_text,
-                    org = (50, 2130),
+                    org = (50, 2120),
                     fontFace = cv2.FONT_HERSHEY_DUPLEX,
                     fontScale = 2,
                     color = (200, 246, 200),
@@ -430,7 +430,7 @@ try:
                 cv2.putText(
                     img = full_frame_data,
                     text = output_text,
-                    org = (50, 4570),
+                    org = (50, 4560),
                     fontFace = cv2.FONT_HERSHEY_DUPLEX,
                     fontScale = 2,
                     color = (200, 246, 200),
@@ -440,7 +440,7 @@ try:
                 cv2.imshow(WINDOW_NAME, frame_data_crop)
                 new_frame = False
                 if recording and threaded_rec is not None:
-                    threaded_rec.add_frame(frame_data_crop.copy())
+                    threaded_rec.add_frame(frame_data.copy())
             
             ui_event = cv2.waitKey(16)
 
@@ -541,7 +541,7 @@ try:
             if ui_event == 114:
                 if not recording:
                     print('RECORD')
-                    threaded_rec = VideoRecorder()
+                    threaded_rec = VideoRecorder(frame_width = frame_data.shape[1], frame_height = frame_data.shape[0])
                     threaded_rec.add_frame(frame_data.copy())
                     recording = True
                 else:
