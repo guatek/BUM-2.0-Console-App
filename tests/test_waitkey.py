@@ -15,6 +15,7 @@ while(1):
 
 
 """
+Button mapping from char to numerical value returned by waitKey()
 114 = Rec
 109 = Menu
 119 = Up
@@ -23,4 +24,10 @@ while(1):
 101 = Enter
 100 = right
 97 = left
+49 = 1
+50 = 2
+51 = 3
+52 = 4
+53 = 5
+54 = 6
 """

@@ -15,6 +15,7 @@ from video_recorder import VideoRecorder
 
 # overlay tools
 from overlay import draw_scale_bar, draw_sensor_status, draw_system_status
+from button_macros import ButtonOneMacro
 
 WINDOW_NAME = 'BUM2.0'
 FPS_SMOOTHING = 0.9
@@ -335,6 +336,7 @@ try:
     trigger_width = 4*uv_flash_dur
     recording = False
     threaded_rec = None
+    macro_object = None
     pc.send_command_and_confirm("cameraon")
     pc.send_command("cfg,whiteflash," + str(white_flash_dur))
     pc.send_command("cfg,uvflash," + str(uv_flash_dur))
@@ -432,6 +434,23 @@ try:
                 else:
                     button_event_filter = []
                     continue
+                
+            # Check macros before other ui elements
+            
+            # Check for macro and run if it is ready or remove if it is done
+            if macro_object is not None:
+                macro_object.update()
+                if macro_object.done:
+                    macro_object = None
+            
+            if ui_event == 49:
+                if macro_object is None:
+                    # Create and start macro
+                    macro_object = ButtonOneMacro(pc)
+                    cmd = macro_object.update()
+                else:
+                    # remove and reset macro
+                    macro_object = None
                 
 
 

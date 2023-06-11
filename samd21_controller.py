@@ -65,8 +65,10 @@ class SAMD21Controller:
         cmd = '#SET,' + cfg_name + ',' + cfg_value
         self._ser.write((cmd + "\r").encode('ascii'))
 
-    def set_cmd(self, cmd_name, cmd_value):
+    def set_cmd(self, cmd_name, cmd_value, cmd_value2=None):
         cmd = '#' + cmd_name + ',' + cmd_value
+        if cmd_value2 is not None:
+            cmd += "," + cmd_value2
         self._ser.write((cmd + "\r").encode('ascii'))
 
 
