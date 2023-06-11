@@ -14,7 +14,7 @@ from console_control import ConsoleController
 from video_recorder import VideoRecorder
 
 # overlay tools
-from overlay import draw_scale_bar
+from overlay import draw_scale_bar, draw_sensor_status
 
 WINDOW_NAME = 'BUM2.0'
 FPS_SMOOTHING = 0.9
@@ -342,6 +342,7 @@ try:
     pc.send_command("movelens,0.0")
     focus_pos = 0.0
     sensors_valid = False
+    latest_sensor_data = []
 
     # filter events to eliminate false button presses
     button_event_filter = []
@@ -360,12 +361,8 @@ try:
         prev = now
 
         if time.time() - cc_update_timer > 1.0:
-            d = cc.get_latest_data()
-            logger.debug(d)
-            batt_voltage = d[5]
-            sys_temp = d[2]
-            sys_hum = d[4]
-            batt_charge = d[15]
+            latest_sensor_data = cc.get_latest_data()
+            logger.debug(latest_sensor_data)
             cc_update_timer = time.time()
             sensors_valid = True
 
@@ -393,31 +390,12 @@ try:
 
                 # Sensor text for app
                 if sensors_valid:
-                    sensor_text = "Temp: " + '{:.2f}'.format(sys_temp) + " C, Humidity: " + '{:.2f}'.format(sys_hum) + " %, Battery: " +  '{:.2f}'.format(batt_charge) + " %"
-                else:
-                    sensor_text = ""
+                    draw_sensor_status(frame_data_crop, latest_sensor_data)
+                    draw_sensor_status(frame_data, latest_sensor_data)
 
+                # Scale bar For app
                 draw_scale_bar(frame_data_crop, focus_pos)
                 draw_scale_bar(frame_data, focus_pos)
-
-                cv2.putText(
-                    img = frame_data_crop,
-                    text = sensor_text,
-                    org = (50, 60),
-                    fontFace = cv2.FONT_HERSHEY_DUPLEX,
-                    fontScale = 2,
-                    color = (246, 200, 200),
-                    thickness = 2
-                )
-                cv2.putText(
-                    img = full_frame_data,
-                    text = sensor_text,
-                    org = (50, 60),
-                    fontFace = cv2.FONT_HERSHEY_DUPLEX,
-                    fontScale = 2,
-                    color = (246, 200, 200),
-                    thickness = 2
-                )
 
                 cv2.putText(
                     img = frame_data_crop,
@@ -441,7 +419,7 @@ try:
                 cv2.imshow(WINDOW_NAME, frame_data_crop)
                 new_frame = False
                 if recording and threaded_rec is not None:
-                    threaded_rec.add_frame(frame_data.copy())
+                    threaded_rec.add_frame(frame_data)
             
             ui_event = cv2.waitKey(16)
 
@@ -562,6 +540,9 @@ try:
 
     # Cleanup
     pc.send_command_and_confirm("cameraon")
+
+    # stop concole serial read thread
+    cc.stop()
 
     (CameraStop_status,) = KYFG_CameraStop(camHandleArray[grabberIndex][0])
 

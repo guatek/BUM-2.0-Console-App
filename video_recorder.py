@@ -10,9 +10,12 @@ import time
 from collections import deque
 
 class VideoRecorder(threading.Thread):
-    def __init__(self, frame_width=3840, frame_height=2160, frame_rate=20):
+    def __init__(self, frame_width=3840, frame_height=2160, frame_rate=20, frame_modulus=2):
         threading.Thread.__init__(self)
         self.q = deque()
+
+        self.frame_counter = 0
+        self.frame_modulus = frame_modulus
 
         timestr = time.strftime("%Y%m%d-%H%M%S")
         self.video_file = os.path.join('/','NVMEDATA',timestr + '.mp4')
@@ -24,14 +27,14 @@ class VideoRecorder(threading.Thread):
         self.frame_number = 0
 
         #gst_pipeline = 'appsrc ! video/x-raw,format=BGR ! queue ! videoconvert ! x264enc threads=4 ! h264parse ! qtmux ! filesink'
-        gst_pipeline = 'appsrc ! video/x-raw, format=BGR ! queue ! videoconvert ! video/x-raw,format=RGBA ! nvvidconv ! nvv4l2h265enc bitrate=8000000 ! video/x-h265, streamformat=(string)byte-stream ! h265parse ! qtmux ! filesink'
+        gst_pipeline = 'appsrc ! video/x-raw, format=BGR ! queue ! videoconvert ! video/x-raw,format=RGBA ! nvvidconv ! nvv4l2h265enc bitrate=80000000 ! video/x-h265, streamformat=(string)byte-stream ! h265parse ! qtmux ! filesink'
 
         gst_pipeline = gst_pipeline + ' location=' + self.video_file
         logger.debug(gst_pipeline)
         # Set up codec and output video settings
         #self.codec = cv2.VideoWriter_fourcc('M','J','P','G')
         #self.codec = cv2.VideoWriter_fourcc(*'hvc1')
-        self.output_video = cv2.VideoWriter(gst_pipeline, 0, self.frame_rate, (self.frame_width, self.frame_height), True)
+        self.output_video = cv2.VideoWriter(gst_pipeline, 0, self.frame_rate/self.frame_modulus, (self.frame_width, self.frame_height), True)
 
         self.stop_recording = False
 
@@ -46,15 +49,17 @@ class VideoRecorder(threading.Thread):
                 self.frame_number += 1
             except IndexError:
                 #logger.debug("Queue is empty.")
-                time.sleep(0.01)
+                time.sleep(0.005)
                 pass
             
         logger.debug('Ended recorder thread...')
         self.output_video.release()
 
     def add_frame(self, frame):
-        logger.debug("Adding Frame...")
-        self.q.append(frame)
+        if self.frame_counter % self.frame_modulus == 0:
+            logger.debug("Adding Frame...")
+            self.q.append(frame)
+        self.frame_counter += 1
 
     def end_recording(self):
         logger.debug('Stopping recorder thread...')
