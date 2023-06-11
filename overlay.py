@@ -56,3 +56,32 @@ def draw_sensor_status(img, latest_sensor_data):
         color = sensor_color,
         thickness = 2
     )
+
+def draw_system_status(img, recording, mode, focus_pos, white_flash_dur, uv_flash_dur, video_counter, photo_counter):
+
+    output_text = "Status: "
+    if recording:
+        output_text = output_text + "REC"
+    output_text = output_text + ", " + "Mode = "
+    if mode == 0:
+        output_text = output_text + 'WHITE'
+    else:
+        output_text = output_text + 'VIOLET'
+    focus_dist = lens_distance_map(focus_pos)
+    output_text = output_text + ", " + "Focus = " + '{:.3f}'.format(focus_dist) + " mm, Flash Duration = "
+    if mode == 0:
+        output_text = output_text + '{:.3f}'.format(white_flash_dur)
+    else:
+        output_text = output_text + '{:.3f}'.format(uv_flash_dur)
+    output_text = output_text + " us, VIDS " + str(video_counter) + ", IMGS " + str(photo_counter)
+
+    cv2.putText(
+        img = img,
+        text = output_text,
+        org = (50, img.shape[0]-40),
+        fontFace = cv2.FONT_HERSHEY_DUPLEX,
+        fontScale = 2,
+        color = (200, 246, 200),
+        thickness = 2
+    )
+

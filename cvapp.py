@@ -14,7 +14,7 @@ from console_control import ConsoleController
 from video_recorder import VideoRecorder
 
 # overlay tools
-from overlay import draw_scale_bar, draw_sensor_status
+from overlay import draw_scale_bar, draw_sensor_status, draw_system_status
 
 WINDOW_NAME = 'BUM2.0'
 FPS_SMOOTHING = 0.9
@@ -368,58 +368,38 @@ try:
 
         try:
             if new_frame:
+
+                # Demosaic image into color and extract a copy of the central region
                 frame_data = cv2.cvtColor(frame_data,cv2.COLOR_BAYER_RG2RGB)
                 full_frame_data = frame_data
                 frame_data_crop = frame_data[1220:(1220+2160),732:(732+3840),:].copy()
-                
-                # Status Text for app
-                output_text = "Status: "
-                if recording:
-                    output_text = output_text + "REC"
-                output_text = output_text + ", " + "Mode = "
-                if mode == 0:
-                    output_text = output_text + 'WHITE FLASH'
-                else:
-                    output_text = output_text + 'UV FLASH'
-                output_text = output_text + ", " + "Focus = " + '{:.3f}'.format(focus_pos) + ", Flash Duration = "
-                if mode == 0:
-                    output_text = output_text + '{:.3f}'.format(white_flash_dur)
-                else:
-                    output_text = output_text + '{:.3f}'.format(uv_flash_dur)
-                output_text = output_text + ", VID " + str(video_counter) + ", IMG " + str(photo_counter)
 
                 # Sensor text for app
                 if sensors_valid:
                     draw_sensor_status(frame_data_crop, latest_sensor_data)
                     draw_sensor_status(frame_data, latest_sensor_data)
 
-                # Scale bar For app
+                # Scale bar for app
                 draw_scale_bar(frame_data_crop, focus_pos)
                 draw_scale_bar(frame_data, focus_pos)
 
-                cv2.putText(
-                    img = frame_data_crop,
-                    text = output_text,
-                    org = (50, 2120),
-                    fontFace = cv2.FONT_HERSHEY_DUPLEX,
-                    fontScale = 2,
-                    color = (200, 246, 200),
-                    thickness = 2
+                # Status text for app
+                draw_system_status(frame_data_crop,
+                    recording, mode, focus_pos, white_flash_dur, uv_flash_dur, video_counter, photo_counter
                 )
-                cv2.putText(
-                    img = full_frame_data,
-                    text = output_text,
-                    org = (50, 4560),
-                    fontFace = cv2.FONT_HERSHEY_DUPLEX,
-                    fontScale = 2,
-                    color = (200, 246, 200),
-                    thickness = 2
+                draw_system_status(frame_data,
+                    recording, mode, focus_pos, white_flash_dur, uv_flash_dur, video_counter, photo_counter
                 )
 
+                # Draw frame on screen
                 cv2.imshow(WINDOW_NAME, frame_data_crop)
-                new_frame = False
+
+                # Queue frame for video recording
                 if recording and threaded_rec is not None:
                     threaded_rec.add_frame(frame_data)
+
+                # Mark frame old
+                new_frame = False
             
             ui_event = cv2.waitKey(16)
 
