@@ -51,7 +51,7 @@ class ConsoleController(SAMD21Controller):
                 # Set system time if not set yet
                 if not self.system_time_set:
                     os.system('sudo timedatectl set-ntp no')
-                    os.system('sudo timedatectl set-time ' + self.data_list[1])
+                    os.system('sudo timedatectl set-time "' + self.data_list[1] + '"')
                     self.system_time_set = True
 
         except Exception as e:

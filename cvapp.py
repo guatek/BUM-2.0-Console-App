@@ -188,6 +188,47 @@ def startCamera (grabberIndex, cameraIndex):
 
 
 try:
+
+    # system and loop variables
+    fps = 0.0
+    prev = time.time()
+    min_time_between_events = 0.65 # Set to be just slightly longer the comms to the controller
+    c = 'x'
+    mode = 0
+    white_flash_dur = 5
+    uv_flash_dur = 500
+    trigger_width = 4*uv_flash_dur
+    recording = False
+    auto_gain = True
+    threaded_rec = None
+    macro_object = None
+    focus_pos = 0.0
+    sensors_valid = False
+    latest_sensor_data = []
+    latest_probe_data = []
+    camera_gain = 0
+    macro_state_saver = [0,5,500,0.0]
+
+    # Start serial comms before the camera to ensure we don't change the clock 
+    # time while the camera is running as this causes instability
+    logger.debug("Starting serial comms...")
+
+    # start the background threads reading console and probe controller data
+    pc = ProbeController(port='/dev/ttyUSB0')
+    cc = ConsoleController(port='/dev/ttyUSB1')
+    cc.run()
+    pc.run()
+
+    # Setup defaults
+    pc.send_command_and_confirm("cameraon")
+    pc.send_command("cfg,whiteflash," + str(white_flash_dur))
+    pc.send_command("cfg,uvflash," + str(uv_flash_dur))
+    pc.send_command("cfg,trigwidth," + str(trigger_width))
+    pc.send_command("movelens,0.0")
+
+    # delay after starting serial comms
+    time.sleep(2.0)
+
     logger.remove()
     logger.add(sys.stderr, level='INFO')
     now = datetime.utcnow() # current date and time
@@ -326,46 +367,12 @@ try:
     cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
     cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-    fps = 0.0
-    prev = time.time()
-    min_time_between_events = 0.65 # Set to be just slightly longer the comms to the controller
-    c = 'x'
-    mode = 0
-    white_flash_dur = 5
-    uv_flash_dur = 500
-    trigger_width = 4*uv_flash_dur
-    recording = False
-    auto_gain = True
-    threaded_rec = None
-    macro_object = None
-    focus_pos = 0.0
-    sensors_valid = False
-    latest_sensor_data = []
-    latest_probe_data = []
-    camera_gain = 0
-    macro_state_saver = [0,5,500,0.0]
-
     # filter events to eliminate false button presses
     button_event_filter = []
 
     # Timers for commands and sensor updates
     last_command_time = time.time()
     cc_update_timer = time.time()
-
-    logger.debug("Starting serial comms...")
-
-    # start the background threads reading console and probe controller data
-    pc = ProbeController(port='/dev/ttyUSB0')
-    cc = ConsoleController(port='/dev/ttyUSB1')
-    cc.run()
-    pc.run()
-
-    # Setup defaults
-    pc.send_command_and_confirm("cameraon")
-    pc.send_command("cfg,whiteflash," + str(white_flash_dur))
-    pc.send_command("cfg,uvflash," + str(uv_flash_dur))
-    pc.send_command("cfg,trigwidth," + str(trigger_width))
-    pc.send_command("movelens,0.0")
 
     elapsed_time = time.time()
 
@@ -599,6 +606,8 @@ try:
     # stop concole serial read thread
     cc.stop()
     pc.stop()
+
+    time.sleep(2.0)
 
     # Stop camera acq
     (CameraStop_status,) = KYFG_CameraStop(camHandleArray[grabberIndex][0])
