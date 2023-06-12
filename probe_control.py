@@ -13,8 +13,8 @@ class ProbeController(SAMD21Controller):
 
     def __init__(self, port='/dev/ttyACM0', baud=115200):
         super().__init__(port, baud)
-        self.data_fields = ['name','timestamp','temperature','humidity','pressure','voltage','power']
-        self.data_list = ['name','timestamp',0.0,0.0,0.0,0.0,0.0]
+        self.data_fields = ['name','timestamp','temperature','humidity','pressure','voltage','power','camera_on']
+        self.data_list = ['name','timestamp',0.0,0.0,0.0,0.0,0.0,0.0]
 
 
     def parse_data(self):
@@ -23,12 +23,14 @@ class ProbeController(SAMD21Controller):
         self._read_buffer = "".join(self._read_buffer.split('\r')[1:]).lstrip('\n')
         try:
             tokens = self.latest_data.split(',')
-            if len(tokens) != len(self.data_fields):
-                logger.warning("Error parsing data string: " + self.latest_data)
+            if len(tokens[0]) > 1 and tokens[0][0] != '$':
+                pass
+            elif len(tokens) != len(self.data_fields):
+                logger.debug("Error parsing data string: " + self.latest_data)
             else:
                 self.data_list[0] = tokens[0]
                 self.data_list[1] = tokens[1]
-                for i in [2,3,4,5,6]:
+                for i in [2,3,4,5,6,7]:
                     self.data_list[i] = float(tokens[i])
         except Exception as e:
             print(e)

@@ -18,6 +18,9 @@ class SAMD21Controller:
         self.latest_data = ''
         self.config = ''
         self.stop_thread = False
+        self.command_complete = True
+        self.last_data_time = time.time()
+        self.last_command_time = time.time()
 
         self._ser = serial.Serial(self.port, self.baud)
 
@@ -62,14 +65,20 @@ class SAMD21Controller:
         self.pause_thread = False
 
     def set_cfg_value(self, cfg_name, cfg_value):
+        self.pause_thread = True
         cmd = '#SET,' + cfg_name + ',' + cfg_value
         self._ser.write((cmd + "\r").encode('ascii'))
+        self.last_command_time = time.time()
+        self.pause_thread = False
 
     def set_cmd(self, cmd_name, cmd_value, cmd_value2=None):
+        self.pause_thread = True
         cmd = '#' + cmd_name + ',' + cmd_value
         if cmd_value2 is not None:
             cmd += "," + cmd_value2
         self._ser.write((cmd + "\r").encode('ascii'))
+        self.last_command_time = time.time()
+        self.pause_thread = False
 
 
     def send_command(self, cmd):
@@ -97,7 +106,9 @@ class SAMD21Controller:
             if not self.pause_thread and (self._ser.in_waiting > 0):
                 # read the bytes and convert from binary array to ASCII
                 self._read_buffer += self._ser.read(self._ser.inWaiting()).decode('ascii') 
-                
+                if '$' in self._read_buffer:
+                    # Mark any pending commands complete
+                    self.last_data_time = time.time()
                 if '\r' in self._read_buffer:
                     self.new_data = True
                     self.parse_data()
@@ -106,7 +117,7 @@ class SAMD21Controller:
             
             # Optional, but recommended: sleep 10 ms (0.01 sec) once per loop to let 
             # other threads on your PC run during this time. 
-            time.sleep(0.01) 
+            time.sleep(0.1) 
 
 
     def run(self):
@@ -119,6 +130,15 @@ class SAMD21Controller:
         logger.debug('received stop.')
         self.stop_thread = True
         self.t1.join()
+
+    def running_command(self):
+        time_since_command = time.time() - self.last_command_time
+        time_since_data = time.time() - self.last_data_time
+        logger.debug(time_since_data)
+        return time_since_command > 1.0 and time_since_data > 0.3
+    
+    def time_since_data(self):
+        return time.time() - self.last_data_time
 
 if __name__ == '__main__':
     d = SAMD21Controller()

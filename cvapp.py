@@ -14,7 +14,7 @@ from console_control import ConsoleController
 from video_recorder import VideoRecorder
 
 # overlay tools
-from overlay import draw_scale_bar, draw_sensor_status, draw_system_status
+from overlay import draw_scale_bar, draw_sensor_status, draw_system_status, draw_macro_command
 from button_macros import ButtonOneMacro
 
 WINDOW_NAME = 'BUM2.0'
@@ -235,11 +235,15 @@ try:
     # connect to grabber
     connection = connectToGrabber(grabberIndex)
 
+    time.sleep(2)
+
     # scan for connected cameras
     (CameraScan_status, camHandleArray[grabberIndex]) = KYFG_UpdateCameraList(handle[grabberIndex])
     logger.info("Found " + str(len(camHandleArray[grabberIndex])) + " cameras")
     if(len(camHandleArray[grabberIndex]) == 0):
         logger.info("Could not connect to a camera")
+
+    time.sleep(2)
 
     # open a connection to chosen camera
     (KYFG_CameraOpen2_status,) = KYFG_CameraOpen2(camHandleArray[grabberIndex][0], None)
@@ -248,8 +252,6 @@ try:
         logger.info("Camera 0 was connected successfully")
     else:
         logger.info("Something went wrong while opening camera")
-
-    (SetCameraValueFloat_status_height,) = KYFG_SetCameraValueFloat(camHandleArray[grabberIndex][0], "AcquisitionFrameRate", 30.0)
 
     # Example of setting camera values
     (SetCameraValueInt_status_width,) = KYFG_SetCameraValueInt(camHandleArray[grabberIndex][0], "Width", 5312)
@@ -285,10 +287,6 @@ try:
     (KYFG_GetValue_status, width) = KYFG_GetCameraValueInt(camHandleArray[grabberIndex][0], "Width")
     (KYFG_GetValue_status, height) = KYFG_GetCameraValueInt(camHandleArray[grabberIndex][0], "Height")
     
-
-
-
-
     streamInfoStruct.width = width
     streamInfoStruct.height = height
 
@@ -316,15 +314,17 @@ try:
         (status, streamBufferHandle[iFrame]) = KYFG_BufferAnnounce(cameraStreamHandle,
                                                                     streamAllignedBuffer[iFrame], None)
 
+    logger.debug("opening camera...")
+    time.sleep(2)
+
     # start camera
+    logger.debug("starting camera...")
     startCamera(grabberIndex, 0)
 
+    logger.debug("Displaying window...")
     cv2.imshow(WINDOW_NAME, frame_data)
     cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
     cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-
-    pc = ProbeController(port='/dev/ttyUSB0')
-    cc = ConsoleController(port='/dev/ttyUSB1')
 
     fps = 0.0
     prev = time.time()
@@ -335,38 +335,73 @@ try:
     uv_flash_dur = 500
     trigger_width = 4*uv_flash_dur
     recording = False
+    auto_gain = True
     threaded_rec = None
     macro_object = None
+    focus_pos = 0.0
+    sensors_valid = False
+    latest_sensor_data = []
+    latest_probe_data = []
+    camera_gain = 0
+    macro_state_saver = [0,5,500,0.0]
+
+    # filter events to eliminate false button presses
+    button_event_filter = []
+
+    # Timers for commands and sensor updates
+    last_command_time = time.time()
+    cc_update_timer = time.time()
+
+    logger.debug("Starting serial comms...")
+
+    # start the background threads reading console and probe controller data
+    pc = ProbeController(port='/dev/ttyUSB0')
+    cc = ConsoleController(port='/dev/ttyUSB1')
+    cc.run()
+    pc.run()
+
+    # Setup defaults
     pc.send_command_and_confirm("cameraon")
     pc.send_command("cfg,whiteflash," + str(white_flash_dur))
     pc.send_command("cfg,uvflash," + str(uv_flash_dur))
     pc.send_command("cfg,trigwidth," + str(trigger_width))
     pc.send_command("movelens,0.0")
-    focus_pos = 0.0
-    sensors_valid = False
-    latest_sensor_data = []
 
-    # filter events to eliminate false button presses
-    button_event_filter = []
+    elapsed_time = time.time()
 
-    last_command_time = time.time()
-
-    cc_update_timer = time.time()
-
-    # start the background thread reading console controller data
-    cc.run()
-
+    logger.debug("Running app envent loop...")
     while (not stop_app):
 
         now = time.time()
         fps = (fps*FPS_SMOOTHING + (1/(now - prev))*(1.0 - FPS_SMOOTHING))
         prev = now
 
+        # Check if we need to reset threads
+        if cc.time_since_data() > 5:
+            cc.stop()
+            time.sleep(0.5)
+            cc.run()
+        if pc.time_since_data() > 5:
+            pc.stop()
+            time.sleep(0.5)
+            pc.run()
+
         if time.time() - cc_update_timer > 1.0:
             latest_sensor_data = cc.get_latest_data()
+            latest_probe_data = pc.get_latest_data()
             logger.debug(latest_sensor_data)
+            logger.debug(latest_probe_data)
             cc_update_timer = time.time()
             sensors_valid = True
+
+            # Check if we need to send camera_on again unless just starting up
+            if len(latest_probe_data) == 8:
+                if latest_probe_data[7] < 1 and time.time() - elapsed_time > 10:
+                    logger.debug("Turning on probe flash as it was detected off.")
+                    pc.send_command("cameraon")
+
+            # Get camera gain setting
+            (KYFG_GetValue_status, camera_gain) = KYFG_GetCameraValueFloat(camHandleArray[grabberIndex][0], "Gain")
 
         try:
             if new_frame:
@@ -385,13 +420,31 @@ try:
                 draw_scale_bar(frame_data_crop, focus_pos)
                 draw_scale_bar(frame_data, focus_pos)
 
-                # Status text for app
-                draw_system_status(frame_data_crop,
-                    recording, mode, focus_pos, white_flash_dur, uv_flash_dur, video_counter, photo_counter
-                )
-                draw_system_status(frame_data,
-                    recording, mode, focus_pos, white_flash_dur, uv_flash_dur, video_counter, photo_counter
-                )
+                # Check macros before drawing status
+                # Check for macro and run if it is ready or remove if it is done
+                macro_running = False
+                macro_command = ""
+                if macro_object is not None:
+                    macro_command = macro_object.update()
+                    macro_running = True
+                    if macro_object.done:
+                        macro_object = None
+
+                if not macro_running:
+                    # Status text for app
+                    draw_system_status(frame_data_crop,
+                        recording, mode, focus_pos, white_flash_dur, uv_flash_dur, auto_gain, camera_gain, video_counter, photo_counter
+                    )
+                    draw_system_status(frame_data,
+                        recording, mode, focus_pos, white_flash_dur, uv_flash_dur, auto_gain, camera_gain, video_counter, photo_counter
+                    )
+                else:
+                    draw_macro_command(frame_data,
+                        macro_command, recording, video_counter, photo_counter
+                    )
+                    draw_macro_command(frame_data_crop,
+                        macro_command, recording, video_counter, photo_counter
+                    )
 
                 # Draw frame on screen
                 cv2.imshow(WINDOW_NAME, frame_data_crop)
@@ -403,6 +456,7 @@ try:
                 # Mark frame old
                 new_frame = False
             
+            # UI Event handling below this line
             ui_event = cv2.waitKey(16)
 
             # Check for event and minimum event time
@@ -410,19 +464,6 @@ try:
                 button_event_filter.append(ui_event)
                 continue
 
-                """
-                # If this is the first event in a batch, wait for possiblee other events
-                if len(button_event_filter) == 1:
-                    last_command_time = time.time()
-                    continue
-
-                elapsed_time = time.time() - last_command_time
-                # Don't process any commands if the time between them is too short
-                if elapsed_time < min_time_between_events:
-                    continue
-                else:
-                    last_command_time = time.time()
-                """
             # Filter out multi button events. The assumption here is that any set of events is
             # a button read error and only events with a single 
             if time.time() - last_command_time >= 0.15:
@@ -435,25 +476,32 @@ try:
                     button_event_filter = []
                     continue
                 
-            # Check macros before other ui elements
             
-            # Check for macro and run if it is ready or remove if it is done
-            if macro_object is not None:
-                macro_object.update()
-                if macro_object.done:
-                    macro_object = None
-            
+            # MACRO 1 (Disabled for now)
             if ui_event == 49:
+                """
                 if macro_object is None:
                     # Create and start macro
                     macro_object = ButtonOneMacro(pc)
-                    cmd = macro_object.update()
+                    #Save state for after macro
+                    macro_state_saver[0] = mode
+                    macro_state_saver[1] = white_flash_dur
+                    macro_state_saver[2] = uv_flash_dur
+                    macro_state_saver[3] = focus_pos
                 else:
                     # remove and reset macro
                     macro_object = None
+                    #restore previous state
+                    pc.set_cfg_value('imagingmode', str(macro_state_saver[0]))
+                    time.sleep(0.1)
+                    pc.set_cfg_value('whiteflash', str(macro_state_saver[1]))
+                    time.sleep(0.1)
+                    pc.set_cfg_value('uvflash', str(macro_state_saver[2]))
+                    time.sleep(0.1)
+                    pc.set_cmd("movelens",str(str(macro_state_saver[2])),'0.05')
+                """
+
                 
-
-
             # TAKE PHOTO
             if ui_event == 101:
                 print("PHOTO")
@@ -515,12 +563,21 @@ try:
                     #pc.send_command("cfg,uvflash," + str(uv_flash_dur))
                     pc.set_cfg_value('uvflash', str(uv_flash_dur))
 
+            # Toggle AUTO GAIN
+            if ui_event == 109:
+                if auto_gain:
+                    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "GainAuto", "Off")
+                    auto_gain = False
+                else:
+                    (SetCameraValueEnum_ByValueName_status,) = KYFG_SetCameraValueEnum_ByValueName(camHandleArray[grabberIndex][0], "GainAuto", "Continuous")
+                    auto_gain = True
+
             # RECORD
             if ui_event == 114:
                 if not recording:
                     print('RECORD')
                     threaded_rec = VideoRecorder(frame_width = frame_data.shape[1], frame_height = frame_data.shape[0])
-                    threaded_rec.add_frame(frame_data.copy())
+                    threaded_rec.add_frame(frame_data)
                     recording = True
                 else:
                     print('STOP')
@@ -538,11 +595,12 @@ try:
 
 
     # Cleanup
-    pc.send_command_and_confirm("cameraon")
 
     # stop concole serial read thread
     cc.stop()
+    pc.stop()
 
+    # Stop camera acq
     (CameraStop_status,) = KYFG_CameraStop(camHandleArray[grabberIndex][0])
 
     if (len(camHandleArray[grabberIndex]) > 0):

@@ -58,7 +58,7 @@ class VideoRecorder(threading.Thread):
     def add_frame(self, frame):
         if self.frame_counter % self.frame_modulus == 0:
             logger.debug("Adding Frame...")
-            self.q.append(frame)
+            self.q.append(frame.copy())
         self.frame_counter += 1
 
     def end_recording(self):

@@ -32,6 +32,7 @@ def command_to_pc(cmd, pc=None):
     elif tokens[0].lower() == 'white':
         try:
             pc.set_cfg_value('imagingmode', '0')
+            time.sleep(0.1)
             pc.set_cfg_value('whiteflash', tokens[1])
         except:
             pass
@@ -39,6 +40,7 @@ def command_to_pc(cmd, pc=None):
     elif tokens[0].lower() == 'violet':
         try:
             pc.set_cfg_value('imagingmode', '1')
+            time.sleep(0.1)
             pc.set_cfg_value('uvflash', tokens[1])
         except:
             pass
@@ -51,7 +53,8 @@ class ButtonMacro:
         self.pc = pc
         self.command_list = []
         self.command_index = 0
-        self.last_command_time = time.time()
+        self.last_command = ''
+        self.last_command_time = 0
         self.done = False
 
     def update(self):
@@ -59,11 +62,13 @@ class ButtonMacro:
         if not self.done and self.command_index < len(self.command_list):
             
             # Rate limit commands to 1 Hz
-            if time.time() - self.last_command_time > 1.0:
-                cmd = self.command_list[self.command_index]
-                command_to_pc(cmd, self.pc)
-                self.command_index += 1
+            if time.time() - self.last_command_time > 5.0:
+                self.last_command = self.command_list[self.command_index]
+                command_to_pc(self.last_command, self.pc)
                 self.last_command_time = time.time()
+                self.command_index += 1
+            cmd = self.last_command
+
         else:
             self.done = True
             self.command_index = 0
@@ -75,12 +80,7 @@ class ButtonOneMacro(ButtonMacro):
         super().__init__(pc)
 
         # Add commands here
-        self.command_list.append('white,50')
         self.command_list.append('move,-1.99,0.05')
         self.command_list.append('move,2.99,0.05')
-        self.command_list.append('violet,1000')
-        self.command_list.append('move,-1.99,0.05')
-        self.command_list.append('move,2.99,0.05')
-        self.command_list.append('move,0.0,0.05')
 
 
