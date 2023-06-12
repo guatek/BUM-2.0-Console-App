@@ -32,6 +32,8 @@ class ConsoleController(SAMD21Controller):
                             'state_of_charge']
         self.data_list = ['name','timestamp',0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
 
+        self.system_time_set = False
+
 
     def parse_data(self):
         self.latest_data = self._read_buffer.split('\r')[0].rstrip('\n')
@@ -46,6 +48,12 @@ class ConsoleController(SAMD21Controller):
                 self.data_list[1] = tokens[1]
                 for i in [2,3,4,5,6,7,8,9,10,11,12,13,14,15]:
                     self.data_list[i] = float(tokens[i])
+                # Set system time if not set yet
+                if not self.system_time_set:
+                    os.system('sudo timedatectl set-ntp no')
+                    os.system('sudo timedatectl set-time ' + self.data_list[1])
+                    self.system_time_set = True
+
         except Exception as e:
             print(e)
         self.new_data = False
